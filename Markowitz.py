@@ -23,7 +23,7 @@ CovMat = np.cov((data['SPY'], data['GLD'], data['UUP'], data['IWM']))
 # only minimize is possible, so in case of maximizing, we apply the minus sign
 def objective(x):
     mean = x @ pd.DataFrame(AvgRORList)
-    variance = x.T @ covmat @ x
+    variance = x.T @ CovMat @ x
     sigma = variance ** 0.5
     # RFROR = 0.0125 / 12
     return -mean / sigma
@@ -45,7 +45,7 @@ def markowitz_ratio(covmat, lb, ub):
     constraints = ({'type': 'eq', 'fun': weight_sum_constraint})
     options = {'ftol': 1e-20, 'maxiter': 800}
 
-    result = minimize(fun=MinVol_objective,
+    result = minimize(fun=objective,
                       x0=x0,
                       method='SLSQP',
                       constraints=constraints,
