@@ -1,58 +1,101 @@
-import os, sys
+# the usual stuff
+import os
+import sys
 import pandas as pd
-from scipy.optimize import minimize
 import numpy as np
 
+# our main tool for optimization
+from scipy.optimize import minimize
+
+# plotting
+import plotly
+import plotly.plotly as py
+import plotly.graph_objs as go
+plotly.tools.set_credentials_file(username='Incantator', api_key='plAiR5R27boC650ZYo7R')
+plotly.tools.set_config_file(world_readable=True)
+
+
+# start = time.time()
 os.chdir(r'C:\Users\quantec\Desktop\work at office\asset allocation')
 
+# I wanna see each and every column rather than giving me the abbreviations '...'
 pd.set_option('expand_frame_repr', False)
 
-# data.columns = Index(['날짜', 'Coli']) where each column (other than '날짜') contains its ROR
-data = pd.read_excel(r'20170817 Markowiz Mean Variance Efficient Frontier_YS.xlsm', 'Sheet1')
-data['날짜'] = pd.to_datetime(data['날짜'])
+# pandas display floating precision to 10; default is 6
+# https://pandas.pydata.org/pandas-docs/stable/options.html
+pd.reset_option('display.precision', 10)
 
-# average ROR; here, we're converting monthly ROR into yearly one as a compound rate
-AvgRORList = []
-for i in range(1, len(data.columns)):
-    AvgRORList.append((1 + data.iloc[:, i].mean())**12 - 1)
+# data.columns = Index(['날짜', 'Coli'])
+# the first column is the date, and the rest should be ROR data of the corresponding column name
+Data = pd.read_excel(r'20170817 Markowiz Mean Variance Efficient Frontier_YS.xlsm', 'Sheet1')
+Data['날짜'] = pd.to_datetime(Data['날짜'])
 
-# covariance ndarray
-CovMat = np.cov((data['SPY'], data['GLD'], data['UUP'], data['IWM']))
+lb = [0, 0, 0, 0]
+ub = [1, 1, 1, 1]
+bnds = tuple(zip(lb, ub))
 
-
-# only minimize is possible, so in case of maximizing, we apply the minus sign
-def objective(x):
-    mean = x @ pd.DataFrame(AvgRORList)
-    variance = x.T @ CovMat @ x
-    sigma = variance ** 0.5
-    # RFROR = 0.0125 / 12
-    return -mean / sigma
+# initial ratio  ex) (0.25, 0.25, 0.25, 0.25)
+x0 = np.repeat(1 / (len(Data.columns)-1), len(Data.columns)-1)
 
 
+# the contraint stating the sum of all the ratio should equal 1
 def weight_sum_constraint(x):
-        return x.sum() - 1.0
+    return x.sum() - 1.0
 
 
-lb = [0.1, 0, 0.15, 0]
-ub = [1, 0.9, 1, 0.9]
+TrailingNum = 12
+Start = 0
 
 
-def markowitz_ratio(covmat, lb, ub):
-    # initial value
-    x0 = np.repeat(1 / covmat.shape[0], covmat.shape[0])
-    bnds = tuple(zip(lb, ub))
+def wf_analysis(Data, Start, TrailingNum):
+    # store all the walk forward ROR data
+    WfROR = []
+    # store all the equal rate ROR
+    EqROR = []
 
-    constraints = ({'type': 'eq', 'fun': weight_sum_constraint})
-    options = {'ftol': 1e-20, 'maxiter': 800}
+    while TrailingNum + Start < len(Data.index):
+        Data1 = Data[Start:Start+TrailingNum]
 
-    result = minimize(fun=objective,
-                      x0=x0,
-                      method='SLSQP',
-                      constraints=constraints,
-                      options=options,
-                      bounds=bnds)
-    return result.x
+        # average ROR, but in this case, we use the 1-year compound rate
+        AvgRORList = (1 + Data1.iloc[:, 1:].mean()) ** 12 - 1
+
+        # the objective function we want to minimize/maximize
+        # given ratio, we calculate the portfolio's variance / sharp ratio etc
+        def objective(x):
+            mean = x @ pd.DataFrame(AvgRORList)
+            variance = x.T @ Data1.cov() @ x
+            sigma = variance ** 0.5
+            # RFROR = 0.0125 / 12
+            return -mean / sigma
+
+        result = minimize(fun=objective,
+                          x0=x0,
+                          method='SLSQP',
+                          constraints={'type': 'eq', 'fun': weight_sum_constraint},
+                          options={'ftol': 1e-20, 'maxiter': 800},
+                          bounds=bnds)
+
+        WfROR.append(Data.iloc[Start+TrailingNum, 1:].T @ result.x)
+        EqROR.append(Data.iloc[Start+TrailingNum, 1:].T @ x0)
+        Start = Start + 1
+    return WfROR, EqROR
+
+WfROR, EqROR = wf_analysis(Data, Start, TrailingNum)
+# end = time.time()
+# print(end - start)
+
+trace0 = go.Scatter(
+    x=Data['날짜'][TrailingNum:],
+    y=pd.Series(WfROR).cumsum()
+)
+
+trace1 = go.Scatter(
+    x=Data['날짜'][TrailingNum:],
+    y=pd.Series(EqROR).cumsum()
+)
+
+# plotly.offline.plot([trace0, trace1])
+py.plot([trace0, trace1])
 
 
-markowitz_ratio(CovMat, lb, ub)
 
