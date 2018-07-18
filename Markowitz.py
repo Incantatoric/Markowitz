@@ -14,9 +14,8 @@ import plotly.graph_objs as go
 plotly.tools.set_credentials_file(username='Incantator', api_key='plAiR5R27boC650ZYo7R')
 plotly.tools.set_config_file(world_readable=True)
 
-
 # start = time.time()
-os.chdir(r'C:\Users\quantec\Desktop\work at office\asset allocation')
+os.chdir(r'C:\Users\quantec\Desktop\work at office\asset allocation\Markowitz')
 
 # I wanna see each and every column rather than giving me the abbreviations '...'
 pd.set_option('expand_frame_repr', False)
@@ -35,7 +34,9 @@ ub = [1, 1, 1, 1]
 bnds = tuple(zip(lb, ub))
 
 # initial ratio  ex) (0.25, 0.25, 0.25, 0.25)
-x0 = np.repeat(1 / (len(Data.columns)-1), len(Data.columns)-1)
+InitialValue = np.repeat(1 / (len(Data.columns)-1), len(Data.columns)-1)
+
+assert len(lb) == len(InitialValue), 'The length of the lower/upper bound and the initial ratio should be the same.'
 
 
 # the contraint stating the sum of all the ratio should equal 1
@@ -69,16 +70,17 @@ def wf_analysis(Data, Start, TrailingNum):
             return -mean / sigma
 
         result = minimize(fun=objective,
-                          x0=x0,
+                          x0=InitialValue,
                           method='SLSQP',
                           constraints={'type': 'eq', 'fun': weight_sum_constraint},
                           options={'ftol': 1e-20, 'maxiter': 800},
                           bounds=bnds)
 
         WfROR.append(Data.iloc[Start+TrailingNum, 1:].T @ result.x)
-        EqROR.append(Data.iloc[Start+TrailingNum, 1:].T @ x0)
+        EqROR.append(Data.iloc[Start+TrailingNum, 1:].T @ InitialValue)
         Start = Start + 1
     return WfROR, EqROR
+
 
 WfROR, EqROR = wf_analysis(Data, Start, TrailingNum)
 # end = time.time()
